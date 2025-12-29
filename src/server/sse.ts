@@ -15,7 +15,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 import { createMCPServer, SERVER_NAME, SERVER_VERSION, TOOLS } from './createMCPServer.js';
 import { initializeSupabase } from '../supabase/client.js';
@@ -23,18 +22,6 @@ import type { ServerConfig } from '../types/index.js';
 
 // Store active SSE transports for cleanup
 const activeTransports = new Map<string, SSEServerTransport>();
-
-/**
- * Create a Supabase client with user token for RLS
- */
-function createUserSupabaseClient(config: ServerConfig, userToken: string): SupabaseClient {
-  return createClient(config.supabaseUrl, userToken, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
-}
 
 /**
  * Create and start the SSE Express server
@@ -92,14 +79,14 @@ export async function startSSEServer(config: ServerConfig): Promise<void> {
       description: 'MCP server for managing projects and tasks in Limitless Canvas',
       endpoints: {
         health: '/health',
-        sse: '/sse?token=YOUR_SUPABASE_TOKEN',
+        sse: '/sse',
         message: '/message (POST)',
       },
       tools: TOOLS.map(t => t.name),
       documentation: 'https://limitless-canvas12.vercel.app/settings',
       usage: {
         claude_code: 'Use --stdio flag for local Claude Code integration',
-        claude_chat: 'Connect to /sse endpoint with your Supabase token',
+        claude_chat: 'Connect to /sse endpoint',
       },
     });
   });
@@ -109,36 +96,8 @@ export async function startSSEServer(config: ServerConfig): Promise<void> {
     const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     console.log(`[${SERVER_NAME}] SSE connection request: ${requestId}`);
 
-    // Get user token from query or Authorization header
-    const userToken = (req.query.token as string) ||
-                      req.headers.authorization?.replace('Bearer ', '');
-
-    if (!userToken) {
-      console.error(`[${SERVER_NAME}] No token provided for request ${requestId}`);
-      return res.status(401).json({
-        error: 'Authentication required',
-        message: 'Provide token as query parameter or Authorization header',
-        example: '/sse?token=YOUR_SUPABASE_TOKEN',
-      });
-    }
-
     try {
-      // Verify token with Supabase
-      const userSupabase = createUserSupabaseClient(config, userToken);
-      const { data: { user }, error: authError } = await userSupabase.auth.getUser();
-
-      if (authError || !user) {
-        console.error(`[${SERVER_NAME}] Invalid token for request ${requestId}:`, authError?.message);
-        return res.status(401).json({
-          error: 'Invalid or expired token',
-          message: authError?.message || 'Token validation failed',
-          hint: 'Get a fresh token from your Limitless Canvas settings',
-        });
-      }
-
-      console.log(`[${SERVER_NAME}] User authenticated: ${user.email} (${requestId})`);
-
-      // Create MCP server instance
+      // Create MCP server instance (uses service role key from environment)
       const server = createMCPServer();
 
       // Create SSE transport
@@ -149,13 +108,13 @@ export async function startSSEServer(config: ServerConfig): Promise<void> {
 
       // Handle connection close
       req.on('close', () => {
-        console.log(`[${SERVER_NAME}] SSE connection closed: ${requestId} (${user.email})`);
+        console.log(`[${SERVER_NAME}] SSE connection closed: ${requestId}`);
         activeTransports.delete(requestId);
       });
 
       // Connect server to transport
       await server.connect(transport);
-      console.log(`[${SERVER_NAME}] SSE transport connected: ${requestId} (${user.email})`);
+      console.log(`[${SERVER_NAME}] SSE transport connected: ${requestId}`);
 
     } catch (error) {
       console.error(`[${SERVER_NAME}] SSE connection error (${requestId}):`, error);
