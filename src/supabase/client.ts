@@ -1,9 +1,12 @@
 /**
  * Supabase Client for MCP Server
  *
- * Uses service role key for full database access.
- * This is safe because the MCP server runs locally and
- * only Claude Code has access to it.
+ * Supports two modes:
+ * 1. Service role key for full database access (stdio mode - Claude Code)
+ * 2. User token for RLS-based access (SSE mode - Claude Chat)
+ *
+ * In stdio mode (Claude Code), uses service role key for local access.
+ * In SSE mode (Claude Chat), each user gets their own client with their token.
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
@@ -14,7 +17,7 @@ let currentConfig: ServerConfig | null = null;
 
 /**
  * Initialize the Supabase client with the provided configuration.
- * Must be called before any database operations.
+ * Must be called before any database operations in stdio mode.
  */
 export function initializeSupabase(config: ServerConfig): SupabaseClient {
   if (!config.supabaseUrl) {
@@ -33,6 +36,23 @@ export function initializeSupabase(config: ServerConfig): SupabaseClient {
 
   currentConfig = config;
   return supabaseInstance;
+}
+
+/**
+ * Create a Supabase client with a user's access token.
+ * Used in SSE mode for per-user authentication.
+ */
+export function createUserClient(userToken: string): SupabaseClient {
+  if (!currentConfig?.supabaseUrl) {
+    throw new Error('Supabase not initialized. Call initializeSupabase() first.');
+  }
+
+  return createClient(currentConfig.supabaseUrl, userToken, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
 
 /**

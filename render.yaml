@@ -1,0 +1,34 @@
+# Render.com Deployment Configuration
+# https://render.com/docs/infrastructure-as-code
+#
+# This configures the Limitless Canvas MCP Server for deployment on Render.
+# SSE mode is used by default for Claude Chat integration.
+#
+# Deployment Steps:
+# 1. Push this repo to GitHub
+# 2. Connect repo to Render
+# 3. Render will auto-detect this file
+# 4. Add environment variables in Render dashboard
+# 5. Deploy!
+#
+# Your server URL will be: https://limitless-canvas-mcp.onrender.com
+
+services:
+  - type: web
+    name: limitless-canvas-mcp
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run build
+    startCommand: node build/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DEFAULT_WORKSPACE_ID
+        sync: false
+    autoDeploy: true
